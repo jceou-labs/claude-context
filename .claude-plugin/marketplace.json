@@ -1,5 +1,5 @@
 {
   "name": "context-claude",
-  "owner": { "name": "Jceou" },
+  "owner": { "name": "jceou-labs" },
   "plugins": [{ "name": "context-claude", "source": "./" }]
 }

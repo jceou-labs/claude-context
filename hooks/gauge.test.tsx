@@ -28,11 +28,20 @@ function state(on: any, seeds: Record<string, unknown>) {
   return values
 }
 
+// The percentage: a Text on the terminal, the pill drawing's alt on graphical surfaces.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function percentOf(ui: any): Promise<string | undefined> {
+  const text = await ui.find({ type: 'Text', text: /^(\d+%|–)$/ })
+  if (text) return text.text
+  const svgs: { props: Record<string, unknown> }[] = await ui.findAll({ type: 'Svg' })
+  return svgs.map(s => String(s.props.alt)).find(a => /^(\d+%|–)$/.test(a))
+}
+
 test('the band shows the percentage of the limit, the figures and the buttons on every surface', async ($, on) => {
   state(on, {})
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...BAND, surface } as never)
-    expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('75%')
+    expect(await percentOf(ui)).toBe('75%')
     expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('300k / 400k')
     expect(await ui.find({ type: 'Button', key: 'compact' })).toBeTruthy()
     expect(await ui.find({ type: 'Button', key: 'handoff' })).toBeTruthy()
@@ -41,22 +50,63 @@ test('the band shows the percentage of the limit, the figures and the buttons on
 })
 
 // Bug seen at 7 %: the bar wrapped to a second line on the desktop.
-test('at a low percentage the bar keeps its full width, split in two clipped pieces', async ($, on) => {
+test('on the terminal, at a low percentage the bar keeps its full width, split in two clipped pieces', async ($, on) => {
   state(on, { gauge: { tokens: 28_000, window: 1_000_000, limit: 400_000, autoCompact: true } })
-  for (const surface of SURFACES) {
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' } as never)
+  expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('7%')
+  const [filled = '', empty = ''] = (await ui.findAll({ type: 'Text', text: /^━+$/ })).map(x => x.text ?? '')
+  expect(filled.length).toBe(2)
+  expect(filled.length + empty.length).toBe(30)
+  await ui.unmount()
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function gaugeSource(ui: any): Promise<string> {
+  const svgs: { props: Record<string, unknown> }[] = await ui.findAll({ type: 'Svg' })
+  const gauge = svgs.find(s => String(s.props.alt).startsWith('Context '))
+  return gauge ? `${String(gauge.props.alt)}\n${String(gauge.props.source)}` : ''
+}
+
+test('on graphical surfaces the gauge is a gradient Svg whose fill follows the percentage', async ($, on) => {
+  state(on, { gauge: { tokens: 86_000, window: 1_000_000, limit: 367_000, autoCompact: true } })
+  for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface } as never)
-    expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('7%')
-    const [filled = '', empty = ''] = (await ui.findAll({ type: 'Text', text: /^━+$/ })).map(x => x.text ?? '')
-    expect(filled.length).toBe(2)
-    expect(filled.length + empty.length).toBe(30)
+    expect(await percentOf(ui)).toBe('23%')
+    expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('86k / 367k')
+    expect(await ui.find({ type: 'Text', text: 'tokens' })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /━/ })).toBeFalsy()
+    const source = await gaugeSource(ui)
+    expect(source).toContain('Context 23%')
+    expect(source).toContain('#10b981')
+    expect(source).toContain('#22d3ee')
+    // 23 % of the 152 px track
+    expect(source).toContain('width="35"')
+    expect((await ui.find({ type: 'Button', key: 'hide' }))?.props.label).toBe('×')
+    expect((await ui.find({ type: 'Button', key: 'compact' }))?.props.plain).toBe(true)
+    expect((await ui.find({ type: 'Box', key: 'compact-pill' }))?.props.borderStyle).toBe('round')
+    expect((await ui.find({ type: 'Box', key: 'handoff-pill' }))?.props.borderStyle).toBe('round')
+    expect((await ui.find({ type: 'Box', key: 'hide-pill' }))?.props.borderStyle).toBe('round')
+    // Bug seen on the desktop: an Svg with an empty alt was not drawn at all.
+    const svgs = await ui.findAll({ type: 'Svg' })
+    expect(svgs.length).toBe(6)
+    for (const s of svgs) expect(String(s.props.alt).length).toBeGreaterThan(0)
     await ui.unmount()
   }
+})
+
+test('past 90 % the gauge turns red', async ($, on) => {
+  state(on, { gauge: { tokens: 380_000, window: 1_000_000, limit: 400_000, autoCompact: true } })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
+  const source = await gaugeSource(ui)
+  expect(source).toContain('Context 95%')
+  expect(source).toContain('#f43f5e')
+  await ui.unmount()
 })
 
 test('with no reading yet the band shows a dash, not a stale percentage', async ($, on) => {
   state(on, { gauge: { tokens: null, window: 1_000_000, limit: 400_000, autoCompact: true } })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
-  expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('–')
+    expect(await percentOf(ui)).toBe('–')
   expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('– / 400k')
   await ui.unmount()
 })
@@ -64,7 +114,7 @@ test('with no reading yet the band shows a dash, not a stale percentage', async 
 test('with auto-compaction off the bar runs to the whole window', async ($, on) => {
   state(on, { gauge: { tokens: 500_000, window: 1_000_000, limit: 1_000_000, autoCompact: false } })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
-  expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('50%')
+    expect(await percentOf(ui)).toBe('50%')
   expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('500k / 1M')
   await ui.unmount()
 })

@@ -2,7 +2,7 @@
 
 A slim band above the prompt that shows how full the context is, up to the point where Claude Code compacts it automatically.
 
-![The band in the Claude desktop app in dark mode: a glass bar with an amber 85% pill, an amber gauge, 313k / 367k tokens, and the Compact, Handoff note and close buttons as pills with icons](docs/band.png)
+![The band in the Claude desktop app in dark mode: a glass bar with an amber 77% pill, an amber gauge, 283k / 367k tokens, and the Compact, Handoff note and close buttons as pills with icons](docs/band.png)
 
 ![The same band in light mode, on a pale ground](docs/band-light.png)
 

@@ -2,7 +2,9 @@
 
 A slim band above the prompt that shows how full the context is, up to the point where Claude Code compacts it automatically.
 
-![The band in the Claude desktop app: a dark glass bar with a 64% pill, an emerald-to-cyan gauge, 235k / 367k tokens, and the Compact, Handoff note and close buttons as pills with icons](docs/band.png)
+![The band in the Claude desktop app in dark mode: a glass bar with an amber 85% pill, an amber gauge, 313k / 367k tokens, and the Compact, Handoff note and close buttons as pills with icons](docs/band.png)
+
+![The same band in light mode, on a pale ground](docs/band-light.png)
 
 - **The bar ends at the auto-compaction threshold**, so 100% means "Claude Code is about to compact". With auto-compaction off, it ends at the model's context window.
 - **Emerald to cyan, then amber from 70%, then red from 90%.** The pill around the percentage and the band's border take the same color.
@@ -10,7 +12,7 @@ A slim band above the prompt that shows how full the context is, up to the point
 - **Handoff note** asks Claude to write a note (goal, state, decisions, files, next step) so you can continue in a fresh session.
 - **×** hides the band for the rest of the session.
 
-It works in the terminal and in the desktop app. The desktop app, VS Code and the mobile app draw it as a dark glass bar with a gradient gauge and icons; the terminal draws a text gauge.
+It works in the terminal and in the desktop app. The desktop app, VS Code and the mobile app draw it as a glass bar with a gradient gauge and icons, dark or light with the app's theme; the terminal draws a text gauge.
 
 ## Install
 

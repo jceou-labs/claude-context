@@ -37,6 +37,12 @@ In the desktop app, where `/plugin` doesn't run: click + next to the prompt box,
 - Right after a compaction, Claude Code doesn't measure the context until the next reply. The band shows the size after compaction when Claude Code reports it, and a dash otherwise.
 - In the desktop app, Compact runs the `/compact` command.
 
+## See also
+
+- [claude-workflow-skills](https://github.com/jceou-labs/claude-workflow-skills): nine skills that keep long Claude Code work on track across sessions and projects.
+- [claude-project-tracker](https://github.com/jceou-labs/claude-project-tracker): offline pages showing where your projects stand, kept up to date by Claude.
+- [claude-local-images](https://github.com/jceou-labs/claude-local-images): lets Claude generate images on your own graphics card, free and private.
+
 ## License
 
 MIT

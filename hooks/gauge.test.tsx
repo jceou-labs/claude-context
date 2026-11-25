@@ -81,11 +81,19 @@ test('on graphical surfaces the gauge is a gradient Svg whose fill follows the p
     expect(source).toContain('#22d3ee')
     // 23 % of the 152 px track
     expect(source).toContain('width="35"')
-    expect((await ui.find({ type: 'Button', key: 'hide' }))?.props.label).toBe('×')
+    expect(String((await ui.find({ type: 'Button', key: 'hide' }))?.props.label).trim()).toBe('×')
     expect((await ui.find({ type: 'Button', key: 'compact' }))?.props.plain).toBe(true)
     expect((await ui.find({ type: 'Box', key: 'compact-pill' }))?.props.borderStyle).toBe('round')
     expect((await ui.find({ type: 'Box', key: 'handoff-pill' }))?.props.borderStyle).toBe('round')
     expect((await ui.find({ type: 'Box', key: 'hide-pill' }))?.props.borderStyle).toBe('round')
+    // Bug seen on the desktop: only the label took a click, not the icon or the pill's edges.
+    // The Button is the whole pill: no padding around it, the icon in an absolute layer under it.
+    for (const key of ['compact', 'handoff', 'hide']) {
+      expect((await ui.find({ type: 'Box', key: `${key}-pill` }))?.props.padding).toBe(0)
+    }
+    expect((await ui.find({ type: 'Box', key: 'compact-icon' }))?.props.position).toBe('absolute')
+    expect((await ui.find({ type: 'Box', key: 'handoff-icon' }))?.props.position).toBe('absolute')
+    expect(String((await ui.find({ type: 'Button', key: 'compact' }))?.props.label)).toMatch(/^ {4}Compact $/)
     // Bug seen on the desktop: an Svg with an empty alt was not drawn at all.
     const svgs = await ui.findAll({ type: 'Svg' })
     expect(svgs.length).toBe(7)
@@ -155,6 +163,13 @@ test('Compact pressed during a turn is queued for the end of the turn', async ($
   await ui.press({ key: 'compact' })
   expect(compactions).toBe(0)
   expect(values.compactQueued).toBe(true)
+  // Bug seen on the desktop: the longer label pushed the close button out of the band.
+  const ui2 = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...BAND.props, isWorking: true } } as never)
+  expect(String((await ui2.find({ type: 'Button', key: 'compact' }))?.props.label).trim()).toBe('After this turn')
+  const svgs: { props: Record<string, unknown> }[] = await ui2.findAll({ type: 'Svg' })
+  const gauge = svgs.find(s => String(s.props.alt).startsWith('Context '))
+  expect(gauge?.props.width).toBe(160 - 8 * 9)
+  await ui2.unmount()
   await ui.unmount()
 })
 

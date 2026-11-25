@@ -169,13 +169,20 @@ function modeStyle(selector: string, light: string, dark: string): string {
 }
 
 const GAUGE_PX = 160
+const GAUGE_MIN_PX = 80
 const GAUGE_H = 14
+/** Width of one character of a button label on the desktop, rounded up. */
+const LABEL_CHAR_PX = 9
+/** En spaces before a pill's label: the room its icon takes (one cell, the icon, a gap). */
+const ICON_ROOM = ' '.repeat(4)
+/** The room at a pill's edge where it has no icon, and after every label. */
+const EDGE_ROOM = ' '
 
 /** The track and its gradient fill, with a soft glow under the fill. */
-function gaugeSvg(p: number, t: Tone, isEmpty: boolean): string {
+function gaugeSvg(p: number, t: Tone, isEmpty: boolean, width = GAUGE_PX): string {
   const c = PALETTE[t]
   const pad = 4
-  const track = GAUGE_PX - pad * 2
+  const track = width - pad * 2
   const fill = isEmpty ? 0 : Math.min(track, Math.max(p > 0 ? 6 : 0, Math.round((Math.min(p, 100) / 100) * track)))
   const y = (GAUGE_H - 6) / 2
   const filled =
@@ -185,7 +192,7 @@ function gaugeSvg(p: number, t: Tone, isEmpty: boolean): string {
         `<rect x="${pad + 2}" y="${y + 1}" width="${Math.max(0, fill - 4)}" height="1" rx="0.5" fill="#fff" opacity="0.28"/>`
       : ''
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${GAUGE_PX}" height="${GAUGE_H}" viewBox="0 0 ${GAUGE_PX} ${GAUGE_H}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${GAUGE_H}" viewBox="0 0 ${width} ${GAUGE_H}">` +
     `<defs><linearGradient id="ctx-g-${t}" x1="0" y1="0" x2="1" y2="0">` +
     `<stop offset="0" stop-color="${c.from}"/><stop offset="1" stop-color="${c.to}"/></linearGradient>` +
     `<filter id="ctx-glow-${t}" x="-10%" y="-150%" width="120%" height="400%"><feGaussianBlur stdDeviation="2.2"/></filter></defs>` +
@@ -347,6 +354,53 @@ async function drawBand<R>(
     const { Svg } = $.ui.resolve(e)
     const c = PALETTE[t]
     const pill = percentPill(percent, t)
+    // The row is full: when a button's label grows ("Compacting…", "After this turn"),
+    // the gauge gives up that width so the close button stays inside the band.
+    const growth =
+      Math.max(0, compactLabel.length - 'Compact'.length) + Math.max(0, handoffLabel.length - 'Handoff note'.length)
+    const gaugeWidth = Math.max(GAUGE_MIN_PX, GAUGE_PX - growth * LABEL_CHAR_PX)
+
+    // A pill whose Button is the whole pill: the desktop draws an Svg as an image, which
+    // takes no press, so the icon sits under the Button, in the room its label leaves at the
+    // left with en spaces (they are not collapsed like plain spaces). The icon's absolute Box
+    // comes first and the Button's Box after it, so the Button is painted over the icon.
+    const pillButton = (
+      key: string,
+      label: string,
+      onPress: () => unknown,
+      dim: boolean,
+      icon?: string,
+      iconPx = 14,
+    ) => (
+      <Box
+        key={`${key}-pill`}
+        position="relative"
+        flexDirection="row"
+        alignItems="stretch"
+        padding={0}
+        flexShrink={0}
+        backgroundColor={PILL_BACKGROUND}
+        borderStyle="round"
+        borderColor={PILL_BORDER}
+        hover={{ borderColor: GLASS.borderHover }}
+      >
+        {icon !== undefined && (
+          <Box key={`${key}-icon`} position="absolute" top={0} bottom={0} left={1} flexDirection="row" alignItems="center">
+            <Svg source={icon} alt={`${key === 'compact' ? 'Compact' : 'Handoff'} icon`} width={iconPx} height={iconPx} />
+          </Box>
+        )}
+        <Box flexDirection="row" alignItems="stretch">
+          <Button
+            key={key}
+            label={icon !== undefined ? `${ICON_ROOM}${label}${EDGE_ROOM}` : `${EDGE_ROOM}${label}${EDGE_ROOM}`}
+            plain
+            dimColor={dim}
+            onPress={onPress}
+          />
+        </Box>
+      </Box>
+    )
+
     return (
       <Box
         key="band"
@@ -375,9 +429,9 @@ async function drawBand<R>(
         <Svg source={pill.source} alt={percent} width={pill.width} height={PILL_H} />
 
         <Svg
-          source={gaugeSvg(p, t, g.tokens === null)}
+          source={gaugeSvg(p, t, g.tokens === null, gaugeWidth)}
           alt={`Context ${percent} of the ${g.autoCompact ? 'auto-compaction limit' : 'window'}`}
-          width={GAUGE_PX}
+          width={gaugeWidth}
           height={GAUGE_H}
         />
 
@@ -392,65 +446,11 @@ async function drawBand<R>(
         <Box flexDirection="row" alignItems="center" gap="sm" flexShrink={0}>
           <Svg source={DIVIDER} alt="Separator" width={1} height={18} />
           {/* Each button is a pill like the percentage: a thin border, a faint ground, an icon
-              and a chromeless Button (the desktop takes no drawing inside a Button). */}
-          <Box
-            key="compact-pill"
-            flexDirection="row"
-            alignItems="center"
-            gap="xs"
-            paddingX="sm"
-            paddingY={0}
-            flexShrink={0}
-            backgroundColor={PILL_BACKGROUND}
-            borderStyle="round"
-            borderColor={PILL_BORDER}
-            hover={{ borderColor: GLASS.borderHover }}
-          >
-            <Svg source={COMPACT_ICON} alt="Compact icon" width={14} height={14} />
-            <Button
-              key="compact"
-              label={compactLabel}
-              plain
-              dimColor={running !== null && running !== 'compact'}
-              onPress={onCompact}
-            />
-          </Box>
-          <Box
-            key="handoff-pill"
-            flexDirection="row"
-            alignItems="center"
-            gap="xs"
-            paddingX="sm"
-            paddingY={0}
-            flexShrink={0}
-            backgroundColor={PILL_BACKGROUND}
-            borderStyle="round"
-            borderColor={PILL_BORDER}
-            hover={{ borderColor: GLASS.borderHover }}
-          >
-            <Svg source={HANDOFF_ICON} alt="Handoff icon" width={15} height={15} />
-            <Button
-              key="handoff"
-              label={handoffLabel}
-              plain
-              dimColor={running !== null && running !== 'handoff'}
-              onPress={onHandoff}
-            />
-          </Box>
-          <Box
-            key="hide-pill"
-            flexDirection="row"
-            alignItems="center"
-            paddingX="xs"
-            paddingY={0}
-            flexShrink={0}
-            backgroundColor={PILL_BACKGROUND}
-            borderStyle="round"
-            borderColor={PILL_BORDER}
-            hover={{ borderColor: GLASS.borderHover }}
-          >
-            <Button key="hide" label="×" plain dimColor onPress={hide} />
-          </Box>
+              and a chromeless Button that fills the whole pill, so a click anywhere on it
+              presses (the desktop takes no drawing inside a Button). */}
+          {pillButton('compact', compactLabel, onCompact, running !== null && running !== 'compact', COMPACT_ICON, 14)}
+          {pillButton('handoff', handoffLabel, onHandoff, running !== null && running !== 'handoff', HANDOFF_ICON, 15)}
+          {pillButton('hide', '×', hide, true)}
         </Box>
         </Box>
       </Box>

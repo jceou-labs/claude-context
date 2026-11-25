@@ -1,1 +1,1 @@
-{ "name": "context-claude", "version": "0.8.4", "description": "A context gauge above the prompt, up to the auto-compaction limit, with Compact and Handoff note buttons, drawn as a dark glass band on graphical surfaces", "types": "./types/index.d.ts" }
+{ "name": "context-claude", "version": "0.8.6", "description": "A context gauge above the prompt, up to the auto-compaction limit, with Compact and Handoff note buttons, drawn as a glass band on graphical surfaces", "types": "./types/index.d.ts" }

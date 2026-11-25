@@ -19,7 +19,7 @@ This is a Claude Code mod. It needs Claude Code 2.1.275 or later.
 At the prompt of a Claude Code terminal session:
 
 ```
-/plugin install context-claude --marketplace jceou-labs/context-claude
+/plugin install context-claude --marketplace jceou-labs/claude-context
 ```
 
 Answer `y` to add the marketplace, then pick a scope (Enter keeps the user scope, so the band shows in every session).
@@ -27,10 +27,10 @@ Answer `y` to add the marketplace, then pick a scope (Enter keeps the user scope
 From a shell:
 
 ```
-claude plugin install context-claude --marketplace jceou-labs/context-claude
+claude plugin install context-claude --marketplace jceou-labs/claude-context
 ```
 
-In the desktop app, where `/plugin` doesn't run: click + next to the prompt box, then Plugins, Add marketplace with `jceou-labs/context-claude`, then Add plugin. A mod installed from a terminal at the user scope also shows in the desktop app.
+In the desktop app, where `/plugin` doesn't run: click + next to the prompt box, then Plugins, Add marketplace with `jceou-labs/claude-context`, then Add plugin. A mod installed from a terminal at the user scope also shows in the desktop app.
 
 ## Notes
 

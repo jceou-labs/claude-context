@@ -1,0 +1,123 @@
+import { expect, test } from 'claude-code/testing'
+
+const BAND = {
+  plugin: 'context-claude',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isCollapsed: false },
+} as const
+
+const SURFACES = ['terminal', 'desktop', 'vscode', 'mobile'] as const
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function state(on: any, seeds: Record<string, unknown>) {
+  const values: Record<string, unknown> = {
+    gauge: { tokens: 300_000, window: 1_000_000, limit: 400_000, autoCompact: true },
+    isHidden: false,
+    alertLevel: 0,
+    busy: null,
+    compactQueued: false,
+    ...seeds,
+  }
+  const versions: Record<string, number> = {}
+  on('state.get', (_: unknown, e: { key: string }) => ({ value: { value: values[e.key], version: versions[e.key] ?? 1 } }))
+  on('state.set', (_: unknown, e: { key: string; value: unknown }) => {
+    values[e.key] = e.value
+    versions[e.key] = (versions[e.key] ?? 1) + 1
+    return { value: { isSet: true, version: versions[e.key] } }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  return values
+}
+
+test('the band shows the percentage of the limit, the figures and the buttons on every surface', async ($, on) => {
+  state(on, {})
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...BAND, surface } as never)
+    expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('75%')
+    expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('300k / 400k')
+    expect(await ui.find({ type: 'Button', key: 'compact' })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', key: 'handoff' })).toBeTruthy()
+    await ui.unmount()
+  }
+})
+
+// Bug seen at 7 %: the bar wrapped to a second line on the desktop.
+test('at a low percentage the bar keeps its full width, split in two clipped pieces', async ($, on) => {
+  state(on, { gauge: { tokens: 28_000, window: 1_000_000, limit: 400_000, autoCompact: true } })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...BAND, surface } as never)
+    expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('7%')
+    const [filled = '', empty = ''] = (await ui.findAll({ type: 'Text', text: /^━+$/ })).map(x => x.text ?? '')
+    expect(filled.length).toBe(2)
+    expect(filled.length + empty.length).toBe(30)
+    await ui.unmount()
+  }
+})
+
+test('with no reading yet the band shows a dash, not a stale percentage', async ($, on) => {
+  state(on, { gauge: { tokens: null, window: 1_000_000, limit: 400_000, autoCompact: true } })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
+  expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('–')
+  expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('– / 400k')
+  await ui.unmount()
+})
+
+test('with auto-compaction off the bar runs to the whole window', async ($, on) => {
+  state(on, { gauge: { tokens: 500_000, window: 1_000_000, limit: 1_000_000, autoCompact: false } })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
+  expect((await ui.find({ type: 'Text', text: /^(\d+%|–)$/ }))?.text).toBe('50%')
+  expect((await ui.find({ type: 'Text', text: / \/ / }))?.text).toBe('500k / 1M')
+  await ui.unmount()
+})
+
+// Bug seen: after /compact the gauge kept showing the old 50 %.
+test('a compaction resets the gauge to the size after it', async ($, on) => {
+  const values = state(on, { alertLevel: 70 })
+  on('session.compact', (_: unknown, e: { messages: readonly unknown[] }) => ({ messages: e.messages, tokensBefore: 300_000, tokensAfter: 27_000 }) as never)
+  const summary = { role: 'user', text: 'Summary of the conversation', toolUses: [] }
+  await $.session.compact({ trigger: 'manual', messages: [summary] } as never)
+  expect((values.gauge as { tokens: number }).tokens).toBe(27_000)
+  expect(values.alertLevel).toBe(0)
+})
+
+test('Compact pressed between turns compacts right away', async ($, on) => {
+  state(on, {})
+  let compactions = 0
+  on('session.compact', () => {
+    compactions += 1
+    return { skip: 'test' }
+  })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...BAND.props, isWorking: false } } as never)
+  await ui.press({ key: 'compact' })
+  expect(compactions).toBe(1)
+  await ui.unmount()
+})
+
+test('Compact pressed during a turn is queued for the end of the turn', async ($, on) => {
+  const values = state(on, {})
+  let compactions = 0
+  on('session.compact', () => {
+    compactions += 1
+    return { skip: 'test' }
+  })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...BAND.props, isWorking: true } } as never)
+  await ui.press({ key: 'compact' })
+  expect(compactions).toBe(0)
+  expect(values.compactQueued).toBe(true)
+  await ui.unmount()
+})
+
+test('Handoff note sends the request as a prompt', async ($, on) => {
+  state(on, {})
+  const sent: string[] = []
+  on('prompt.submit', (_: unknown, e: { text: string }) => {
+    sent.push(e.text)
+    return { text: e.text } as never
+  })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
+  await ui.press({ key: 'handoff' })
+  expect(sent.length).toBe(1)
+  expect(sent[0]).toContain('handoff note')
+  expect(sent[0]).not.toContain('session-handoff')
+  await ui.unmount()
+})

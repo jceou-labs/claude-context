@@ -5,8 +5,6 @@ import type { Gauge } from '../types'
 
 const gauge = atom({ plugin: 'context-claude', key: 'gauge' } as const, null)
 const isHidden = atom({ plugin: 'context-claude', key: 'isHidden' } as const, false)
-// Last alert level already shown (0, 70 or 90 % of the limit).
-const alertLevel = atom({ plugin: 'context-claude', key: 'alertLevel' } as const, 0)
 // Button action still running: the other button is dimmed meanwhile.
 const busy = atom({ plugin: 'context-claude', key: 'busy' } as const, null)
 // Compact pressed during a turn: compaction is refused while a turn runs, so it starts when the turn ends.
@@ -111,19 +109,6 @@ async function measure($: EngineInterface, context: SessionContextUsage): Promis
   const { limit, autoCompact } = await limitFor($, context.window)
   const g: Gauge = { tokens: context.tokens ?? null, window: context.window, limit, autoCompact }
   await update($, gauge, () => g)
-
-  if (g.tokens === null) return
-  const p = Math.round((g.tokens / limit) * 100)
-  const level = p >= RED ? RED : p >= ORANGE ? ORANGE : 0
-  const shown = await read($, alertLevel)
-  if (level > shown) {
-    $.ui.toast(
-      level === RED
-        ? `Context at ${p}% of the limit: compact or write a handoff note`
-        : `Context at ${p}% of the limit`,
-    )
-  }
-  if (level !== shown) await update($, alertLevel, () => level)
 }
 
 function short(n: number): string {
@@ -182,7 +167,6 @@ export const register: Register = on => {
     if (!('messages' in r) || !r.messages) return r
     const g = await read($, gauge)
     if (g) await update($, gauge, () => ({ ...g, tokens: r.tokensAfter ?? null }))
-    await update($, alertLevel, () => 0)
     return r
   })
 

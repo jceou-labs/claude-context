@@ -14,7 +14,6 @@ declare module 'claude-code' {
     'context-claude': {
       gauge: Gauge | null
       isHidden: boolean
-      alertLevel: number
       busy: string | null
       compactQueued: boolean
     }

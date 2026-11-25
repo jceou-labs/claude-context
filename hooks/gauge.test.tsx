@@ -13,7 +13,6 @@ function state(on: any, seeds: Record<string, unknown>) {
   const values: Record<string, unknown> = {
     gauge: { tokens: 300_000, window: 1_000_000, limit: 400_000, autoCompact: true },
     isHidden: false,
-    alertLevel: 0,
     busy: null,
     compactQueued: false,
     ...seeds,
@@ -72,12 +71,11 @@ test('with auto-compaction off the bar runs to the whole window', async ($, on) 
 
 // Bug seen: after /compact the gauge kept showing the old 50 %.
 test('a compaction resets the gauge to the size after it', async ($, on) => {
-  const values = state(on, { alertLevel: 70 })
+  const values = state(on, {})
   on('session.compact', (_: unknown, e: { messages: readonly unknown[] }) => ({ messages: e.messages, tokensBefore: 300_000, tokensAfter: 27_000 }) as never)
   const summary = { role: 'user', text: 'Summary of the conversation', toolUses: [] }
   await $.session.compact({ trigger: 'manual', messages: [summary] } as never)
   expect((values.gauge as { tokens: number }).tokens).toBe(27_000)
-  expect(values.alertLevel).toBe(0)
 })
 
 test('Compact pressed between turns compacts right away', async ($, on) => {

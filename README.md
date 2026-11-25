@@ -5,7 +5,7 @@ A slim band above the prompt that shows how full the context is, up to the point
 ![The band in the Claude desktop app: 57%, a thin green bar, 209k / 367k, and the Compact and Handoff note buttons](docs/band.png)
 
 - **The bar ends at the auto-compaction threshold**, so 100% means "Claude Code is about to compact". With auto-compaction off, it ends at the model's context window.
-- **Green, then orange from 70%, then red from 90%**, with a notification at each step.
+- **Green, then orange from 70%, then red from 90%.**
 - **Compact** compacts the conversation now. Pressed during a turn, it waits for the turn to end.
 - **Handoff note** asks Claude to write a note (goal, state, decisions, files, next step) so you can continue in a fresh session.
 - **×** hides the band for the rest of the session.

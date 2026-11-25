@@ -2,9 +2,13 @@
 
 A slim band above the prompt that shows how full the context is, up to the point where Claude Code compacts it automatically.
 
-![The band in the Claude desktop app in dark mode: a glass bar with an amber 77% pill, an amber gauge, 283k / 367k tokens, and the Compact, Handoff note and close buttons as pills with icons](docs/band.png)
+![The band in the Claude desktop app in dark mode at 28%: a glass bar with a green pill, an emerald to cyan gauge, 104k / 367k tokens, and the Compact, Handoff note and close buttons as pills with icons](docs/band-green.png)
 
-![The same band in light mode, on a pale ground](docs/band-light.png)
+![The same band at 77%: the pill, the gauge and the border turn amber, at 283k / 367k tokens](docs/band.png)
+
+![The band in light mode at 28%, on a pale ground](docs/band-green-light.png)
+
+![The band in light mode at 77%, in amber](docs/band-light.png)
 
 - **The bar ends at the auto-compaction threshold**, so 100% means "Claude Code is about to compact". With auto-compaction off, it ends at the model's context window.
 - **Emerald to cyan, then amber from 70%, then red from 90%.** The pill around the percentage and the band's border take the same color.

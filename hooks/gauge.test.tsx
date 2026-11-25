@@ -88,7 +88,7 @@ test('on graphical surfaces the gauge is a gradient Svg whose fill follows the p
     expect((await ui.find({ type: 'Box', key: 'hide-pill' }))?.props.borderStyle).toBe('round')
     // Bug seen on the desktop: an Svg with an empty alt was not drawn at all.
     const svgs = await ui.findAll({ type: 'Svg' })
-    expect(svgs.length).toBe(6)
+    expect(svgs.length).toBe(7)
     for (const s of svgs) expect(String(s.props.alt).length).toBeGreaterThan(0)
     await ui.unmount()
   }
@@ -100,6 +100,9 @@ test('past 90 % the gauge turns red', async ($, on) => {
   const source = await gaugeSource(ui)
   expect(source).toContain('Context 95%')
   expect(source).toContain('#f43f5e')
+  // The buttons stay neutral: only the gauge, its pill and the band's border take the color.
+  const compact = (await ui.find({ type: 'Box', key: 'compact-pill' }))?.props.borderColor
+  expect(compact).toBe((await ui.find({ type: 'Box', key: 'handoff-pill' }))?.props.borderColor)
   await ui.unmount()
 })
 
@@ -167,5 +170,22 @@ test('Handoff note sends the request as a prompt', async ($, on) => {
   expect(sent.length).toBe(1)
   expect(sent[0]).toContain('handoff note')
   expect(sent[0]).not.toContain('session-handoff')
+  await ui.unmount()
+})
+
+test('on graphical surfaces the colors hold in light and dark mode', async ($, on) => {
+  state(on, {})
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' } as never)
+  // The ground is a drawing with a rule per mode: pale in light, the dark veil in dark.
+  const ground = (await ui.findAll({ type: 'Svg' })).find(x => x.props.alt === 'Band background')
+  expect(String(ground?.props.source)).toContain('prefers-color-scheme: light')
+  expect(String(ground?.props.source)).toContain('rgba(255,255,255,0.72)')
+  expect(String(ground?.props.source)).toContain('rgba(4,12,16,0.30)')
+  expect((await ui.find({ type: 'Text', text: / \/ / }))?.props.dimColor).toBe(true)
+  const svgs: { props: Record<string, unknown> }[] = await ui.findAll({ type: 'Svg' })
+  const pill = svgs.find(s => s.props.alt === '75%')
+  expect(String(pill?.props.source)).toContain('prefers-color-scheme: light')
+  const icon = svgs.find(s => s.props.alt === 'Compact icon')
+  expect(String(icon?.props.source)).toContain('prefers-color-scheme: dark')
   await ui.unmount()
 })

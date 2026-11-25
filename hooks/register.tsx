@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionContextUsage } from 'claude-code'
+import type { EngineInterface, Register, RenderInput, SessionContextUsage } from 'claude-code'
 
 import type { Gauge } from '../types'
 
@@ -136,19 +136,36 @@ function bar(p: number): { filled: string; empty: string } {
 
 type Tone = ReturnType<typeof tone>
 
-/** Each tone as a gradient (start, end) and the tint of its pill. */
-const PALETTE: Record<Tone, { from: string; to: string; text: string; tint: string; edge: string }> = {
-  success: { from: '#10b981', to: '#22d3ee', text: '#34d399', tint: 'rgba(16,185,129,0.12)', edge: 'rgba(52,211,153,0.40)' },
-  warning: { from: '#f59e0b', to: '#fb923c', text: '#fbbf24', tint: 'rgba(245,158,11,0.12)', edge: 'rgba(251,191,36,0.40)' },
-  error: { from: '#f43f5e', to: '#fb7185', text: '#fb7185', tint: 'rgba(244,63,94,0.14)', edge: 'rgba(251,113,133,0.45)' },
+/**
+ * Each tone as a gradient (start, end), the tint of its pill, and its figure's color on a dark
+ * ground (`text`) and on a light one (`textLight`, darker so it keeps its contrast).
+ */
+const PALETTE: Record<Tone, { from: string; to: string; text: string; textLight: string; tint: string; edge: string }> = {
+  success: { from: '#10b981', to: '#22d3ee', text: '#34d399', textLight: '#047857', tint: 'rgba(16,185,129,0.12)', edge: 'rgba(52,211,153,0.40)' },
+  warning: { from: '#f59e0b', to: '#fb923c', text: '#fbbf24', textLight: '#b45309', tint: 'rgba(245,158,11,0.12)', edge: 'rgba(251,191,36,0.40)' },
+  error: { from: '#f43f5e', to: '#fb7185', text: '#fb7185', textLight: '#be123c', tint: 'rgba(244,63,94,0.14)', edge: 'rgba(251,113,133,0.45)' },
 }
 
+/**
+ * The render API says nothing of the app's light or dark mode, and a Box takes only a theme
+ * key or a raw color. So the grounds are translucent: a dark veil that deepens a dark app into
+ * glass and turns a light one pale gray, where the app's own dark text stays readable; borders
+ * are mid-gray at low alpha, seen on either. The drawings carry a `prefers-color-scheme` rule.
+ */
 const GLASS = {
-  background: 'rgba(16,21,26,0.82)',
-  border: 'rgba(110,231,183,0.20)',
-  borderHover: 'rgba(110,231,183,0.38)',
-  muted: '#8b949e',
-  divider: 'rgba(255,255,255,0.12)',
+  background: 'rgba(4,12,16,0.30)',
+  border: 'rgba(16,185,129,0.32)',
+  borderHover: 'rgba(16,185,129,0.55)',
+  /** For drawings: a gray that holds on both grounds. */
+  mutedInk: '#8b949e',
+}
+
+/** A drawing's rule for the mode: `light` and `dark` are CSS declarations for `selector`. */
+function modeStyle(selector: string, light: string, dark: string): string {
+  return (
+    `<style>@media (prefers-color-scheme: light){${selector}{${light}}}` +
+    `@media (prefers-color-scheme: dark){${selector}{${dark}}}</style>`
+  )
 }
 
 const GAUGE_PX = 160
@@ -172,7 +189,7 @@ function gaugeSvg(p: number, t: Tone, isEmpty: boolean): string {
     `<defs><linearGradient id="ctx-g-${t}" x1="0" y1="0" x2="1" y2="0">` +
     `<stop offset="0" stop-color="${c.from}"/><stop offset="1" stop-color="${c.to}"/></linearGradient>` +
     `<filter id="ctx-glow-${t}" x="-10%" y="-150%" width="120%" height="400%"><feGaussianBlur stdDeviation="2.2"/></filter></defs>` +
-    `<rect x="${pad}" y="${y}" width="${track}" height="6" rx="3" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.06)" stroke-width="0.75"/>` +
+    `<rect x="${pad}" y="${y}" width="${track}" height="6" rx="3" fill="rgba(127,127,127,0.18)" stroke="rgba(127,127,127,0.12)" stroke-width="0.75"/>` +
     filled +
     `</svg>`
   )
@@ -191,9 +208,10 @@ function percentPill(percent: string, t: Tone): { source: string; width: number 
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${PILL_H}" viewBox="0 0 ${width} ${PILL_H}">` +
     `<defs><filter id="ctx-dot-${t}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.2"/></filter></defs>` +
     `<rect x="0.5" y="0.5" width="${width - 1}" height="${PILL_H - 1}" rx="${(PILL_H - 1) / 2}" fill="${c.tint}" stroke="${c.edge}"/>` +
+    modeStyle('.ink', `fill:${c.textLight}`, `fill:${c.text}`) +
     `<circle cx="11" cy="11" r="3.6" fill="${c.text}" opacity="0.55" filter="url(#ctx-dot-${t})"/>` +
-    `<circle cx="11" cy="11" r="2.4" fill="${c.text}"/>` +
-    `<text x="19" y="15.2" fill="${c.text}" font-family="Segoe UI, system-ui, -apple-system, sans-serif" ` +
+    `<circle class="ink" cx="11" cy="11" r="2.4" fill="${c.text}"/>` +
+    `<text class="ink" x="19" y="15.2" fill="${c.text}" font-family="Segoe UI, system-ui, -apple-system, sans-serif" ` +
     `font-size="12.5" font-weight="600" style="font-variant-numeric: tabular-nums">${percent}</text></svg>`
   return { source, width }
 }
@@ -202,16 +220,24 @@ function percentPill(percent: string, t: Tone): { source: string; width: number 
  * A line icon: each path carries its own stroke, so nothing depends on a group's
  * inherited attributes surviving the surface's clean-up of the markup.
  */
-function lineIcon(size: number, box: number, width: number, color: string, paths: readonly string[]): string {
-  const stroke = `fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`
+function lineIcon(
+  size: number,
+  box: number,
+  width: number,
+  color: string | { light: string; dark: string },
+  paths: readonly string[],
+): string {
+  const base = typeof color === 'string' ? color : GLASS.mutedInk
+  const stroke = `fill="none" stroke="${base}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${box} ${box}">` +
+    (typeof color === 'string' ? '' : modeStyle('path', `stroke:${color.light}`, `stroke:${color.dark}`)) +
     paths.map(d => `<path d="${d}" ${stroke}/>`).join('') +
     `</svg>`
   )
 }
 
-const ICON_COLOR = '#c9d1d9'
+const ICON_COLOR = { light: '#3d444d', dark: '#c9d1d9' }
 
 /** Fold: two arrows meeting on a dashed line, the context squeezed (after Lucide, ISC). */
 const COMPACT_ICON = lineIcon(14, 24, 2, ICON_COLOR, [
@@ -227,19 +253,256 @@ const HANDOFF_ICON = lineIcon(15, 24, 2, ICON_COLOR, [
   'M3 4h8',
 ])
 
-const PILL_BORDER = 'rgba(255,255,255,0.14)'
-const PILL_BACKGROUND = 'rgba(255,255,255,0.04)'
+const PILL_BORDER = 'rgba(140,140,140,0.38)'
+const PILL_BACKGROUND = 'rgba(140,140,140,0.08)'
 
 /** A small stack of coins: the unit of the figures beside it. */
-const TOKENS_ICON = lineIcon(14, 16, 1.3, GLASS.muted, [
+const TOKENS_ICON = lineIcon(14, 16, 1.3, GLASS.mutedInk, [
   'M3 4a5 2 0 1 0 10 0a5 2 0 1 0 -10 0',
   'M3 4v4c0 1.1 2.2 2 5 2s5-.9 5-2V4',
   'M3 8v4c0 1.1 2.2 2 5 2s5-.9 5-2V8',
 ])
 
+/**
+ * The band's ground, drawn so it can follow the mode: a Box color reads no mode, but a drawing's
+ * `prefers-color-scheme` rule does. Dark keeps the dark veil; light gets a pale white one. A
+ * surface that ignores the rule keeps the dark veil, as before. The drawing is wide and is cut
+ * to the band's width; its height is the band's.
+ */
+// The height the band had when a Box color painted it: the pills (22 px) and a little air.
+const GROUND_H = 30
+const GROUND =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="${GROUND_H}" viewBox="0 0 4000 ${GROUND_H}" preserveAspectRatio="none">` +
+  modeStyle('rect', 'fill:rgba(255,255,255,0.72)', `fill:${GLASS.background}`) +
+  `<rect width="4000" height="${GROUND_H}" fill="${GLASS.background}"/></svg>`
+
 const DIVIDER =
   `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="18" viewBox="0 0 1 18">` +
-  `<rect width="1" height="18" fill="${GLASS.divider}"/></svg>`
+  `<rect width="1" height="18" fill="${GLASS.mutedInk}" opacity="0.35"/></svg>`
+
+
+
+/**
+ * Draws the band: the glass bar on graphical surfaces when `glass`, else the text band
+ * every Claude Code draws (the terminal's, and the fallback below).
+ */
+async function drawBand<R>(
+  $: EngineInterface,
+  e: RenderInput<'AbovePrompt'>,
+  next: (e: RenderInput<'AbovePrompt'>) => Promise<R>,
+  glass: boolean,
+) {
+  const g = await read($, gauge)
+  if (e.props.hasSurvey || g === null || (await read($, isHidden))) {
+    return next(e)
+  }
+
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const running = await read($, busy)
+  const queued = await read($, compactQueued)
+  const tokens = g.tokens ?? 0
+  const p = Math.round((tokens / g.limit) * 100)
+  const t = tone(p)
+  const b = bar(p)
+  const terminal = e.surface === 'terminal'
+  // Under 50 % the buttons stay quiet; from 70 % Compact becomes the main action.
+  const quiet = p < 50
+  const urgent = p >= ORANGE
+
+  const onCompact = async () => {
+    if ((await read($, busy)) !== null) return
+    if (await read($, compactQueued)) {
+      await update($, compactQueued, () => false)
+      $.ui.toast('Queued compaction canceled')
+      return
+    }
+    if (e.props.isWorking) {
+      await update($, compactQueued, () => true)
+      $.ui.toast('Compaction queued: it starts when this turn ends')
+      return
+    }
+    // Not awaited: a compaction takes longer than the 10 s a press may run.
+    void compact($)
+  }
+
+  const onHandoff = async () => {
+    if ((await read($, busy)) !== null) return
+    await update($, busy, () => 'handoff')
+    try {
+      await $.prompt.submit({ text: HANDOFF_PROMPT, asUser: true })
+    } catch (err) {
+      $.ui.toast(`Couldn't send the handoff request: ${reason(err)}`)
+    } finally {
+      await update($, busy, () => null)
+    }
+  }
+
+  const figures = `${g.tokens === null ? '–' : short(tokens)} / ${short(g.limit)}`
+  const percent = g.tokens === null ? '–' : `${p}%`
+  const compactLabel = running === 'compact' ? 'Compacting…' : queued ? 'After this turn' : 'Compact'
+  const handoffLabel = running === 'handoff' ? 'Sent…' : 'Handoff note'
+  const hide = () => update($, isHidden, () => true)
+
+  if (glass && e.surface !== 'terminal') {
+    const { Svg } = $.ui.resolve(e)
+    const c = PALETTE[t]
+    const pill = percentPill(percent, t)
+    return (
+      <Box
+        key="band"
+        position="relative"
+        overflow="hidden"
+        padding={0}
+        borderStyle="round"
+        borderColor={p >= ORANGE ? c.edge : GLASS.border}
+        hover={{ borderColor: p >= ORANGE ? c.text : GLASS.borderHover }}
+      >
+        {/* The ground sits in the flow and gives the band its height; the desktop paints an
+            absolute Box over its siblings, so the content is the absolute layer, above it. */}
+        <Svg source={GROUND} alt="Band background" height={GROUND_H} />
+        <Box
+          position="absolute"
+          top={0}
+          left={0}
+          right={0}
+          bottom={0}
+          flexDirection="row"
+          alignItems="center"
+          gap="sm"
+          paddingX="md"
+        >
+        {/* Percentage pill: lit dot and figure on a tinted ground, one thin drawing. */}
+        <Svg source={pill.source} alt={percent} width={pill.width} height={PILL_H} />
+
+        <Svg
+          source={gaugeSvg(p, t, g.tokens === null)}
+          alt={`Context ${percent} of the ${g.autoCompact ? 'auto-compaction limit' : 'window'}`}
+          width={GAUGE_PX}
+          height={GAUGE_H}
+        />
+
+        <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
+          <Svg source={TOKENS_ICON} alt="Tokens" width={14} height={14} />
+          <Text key="figures" dimColor size="caption" tabular>{figures}</Text>
+          <Text key="unit" dimColor size="caption">tokens</Text>
+        </Box>
+
+        <Box flexGrow={1} />
+
+        <Box flexDirection="row" alignItems="center" gap="sm" flexShrink={0}>
+          <Svg source={DIVIDER} alt="Separator" width={1} height={18} />
+          {/* Each button is a pill like the percentage: a thin border, a faint ground, an icon
+              and a chromeless Button (the desktop takes no drawing inside a Button). */}
+          <Box
+            key="compact-pill"
+            flexDirection="row"
+            alignItems="center"
+            gap="xs"
+            paddingX="sm"
+            paddingY={0}
+            flexShrink={0}
+            backgroundColor={PILL_BACKGROUND}
+            borderStyle="round"
+            borderColor={PILL_BORDER}
+            hover={{ borderColor: GLASS.borderHover }}
+          >
+            <Svg source={COMPACT_ICON} alt="Compact icon" width={14} height={14} />
+            <Button
+              key="compact"
+              label={compactLabel}
+              plain
+              dimColor={running !== null && running !== 'compact'}
+              onPress={onCompact}
+            />
+          </Box>
+          <Box
+            key="handoff-pill"
+            flexDirection="row"
+            alignItems="center"
+            gap="xs"
+            paddingX="sm"
+            paddingY={0}
+            flexShrink={0}
+            backgroundColor={PILL_BACKGROUND}
+            borderStyle="round"
+            borderColor={PILL_BORDER}
+            hover={{ borderColor: GLASS.borderHover }}
+          >
+            <Svg source={HANDOFF_ICON} alt="Handoff icon" width={15} height={15} />
+            <Button
+              key="handoff"
+              label={handoffLabel}
+              plain
+              dimColor={running !== null && running !== 'handoff'}
+              onPress={onHandoff}
+            />
+          </Box>
+          <Box
+            key="hide-pill"
+            flexDirection="row"
+            alignItems="center"
+            paddingX="xs"
+            paddingY={0}
+            flexShrink={0}
+            backgroundColor={PILL_BACKGROUND}
+            borderStyle="round"
+            borderColor={PILL_BORDER}
+            hover={{ borderColor: GLASS.borderHover }}
+          >
+            <Button key="hide" label="×" plain dimColor onPress={hide} />
+          </Box>
+        </Box>
+        </Box>
+      </Box>
+    )
+  }
+
+  return (
+    <Box
+      flexDirection="row"
+      alignItems="center"
+      gap="md"
+      paddingX={terminal ? 1 : 'sm'}
+      borderStyle={terminal ? 'round' : undefined}
+      borderColor={terminal ? (p >= ORANGE ? t : 'subtle') : undefined}
+    >
+      <Box minWidth={5}>
+        <Text key="percent" color={t} weight="semibold" bold tabular>
+          {g.tokens === null ? '–' : `${p}%`}
+        </Text>
+      </Box>
+
+      {/* On the desktop the "━" glyph is a little wider than a cell: what overflows is clipped
+          instead of wrapping to a second line. */}
+      <Box flexDirection="row" width={BAR_WIDTH} overflow="hidden">
+        <Text key="filled" color={t} mono wrap="clip">{b.filled}</Text>
+        <Text key="empty" color="subtle" mono wrap="clip">{b.empty}</Text>
+      </Box>
+
+      <Text key="figures" dimColor size="caption" tabular>{figures}</Text>
+
+      <Box flexGrow={1} />
+
+      <Box flexDirection="row" alignItems="center" gap="sm">
+        <Button
+          key="compact"
+          label={running === 'compact' ? 'Compacting…' : queued ? 'After this turn' : 'Compact'}
+          variant={urgent || queued ? 'primary' : 'secondary'}
+          dimColor={!queued && (quiet || (running !== null && running !== 'compact'))}
+          onPress={onCompact}
+        />
+        <Button
+          key="handoff"
+          label={running === 'handoff' ? 'Sent…' : 'Handoff note'}
+          variant="secondary"
+          dimColor={quiet || (running !== null && running !== 'handoff')}
+          onPress={onHandoff}
+        />
+        <Button key="hide" label="×" plain dimColor onPress={hide} />
+      </Box>
+    </Box>
+  )
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -279,204 +542,9 @@ export const register: Register = on => {
     return r
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const g = await read($, gauge)
-    if (e.props.hasSurvey || g === null || (await read($, isHidden))) {
-      return next(e)
-    }
-
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const running = await read($, busy)
-    const queued = await read($, compactQueued)
-    const tokens = g.tokens ?? 0
-    const p = Math.round((tokens / g.limit) * 100)
-    const t = tone(p)
-    const b = bar(p)
-    const terminal = e.surface === 'terminal'
-    // Under 50 % the buttons stay quiet; from 70 % Compact becomes the main action.
-    const quiet = p < 50
-    const urgent = p >= ORANGE
-
-    const onCompact = async () => {
-      if ((await read($, busy)) !== null) return
-      if (await read($, compactQueued)) {
-        await update($, compactQueued, () => false)
-        $.ui.toast('Queued compaction canceled')
-        return
-      }
-      if (e.props.isWorking) {
-        await update($, compactQueued, () => true)
-        $.ui.toast('Compaction queued: it starts when this turn ends')
-        return
-      }
-      // Not awaited: a compaction takes longer than the 10 s a press may run.
-      void compact($)
-    }
-
-    const onHandoff = async () => {
-      if ((await read($, busy)) !== null) return
-      await update($, busy, () => 'handoff')
-      try {
-        await $.prompt.submit({ text: HANDOFF_PROMPT, asUser: true })
-      } catch (err) {
-        $.ui.toast(`Couldn't send the handoff request: ${reason(err)}`)
-      } finally {
-        await update($, busy, () => null)
-      }
-    }
-
-    const figures = `${g.tokens === null ? '–' : short(tokens)} / ${short(g.limit)}`
-    const percent = g.tokens === null ? '–' : `${p}%`
-    const compactLabel = running === 'compact' ? 'Compacting…' : queued ? 'After this turn' : 'Compact'
-    const handoffLabel = running === 'handoff' ? 'Sent…' : 'Handoff note'
-    const hide = () => update($, isHidden, () => true)
-
-    if (e.surface !== 'terminal') {
-      const { Svg } = $.ui.resolve(e)
-      const c = PALETTE[t]
-      const pill = percentPill(percent, t)
-      return (
-        <Box
-          key="band"
-          flexDirection="row"
-          alignItems="center"
-          gap="sm"
-          paddingX="md"
-          paddingY="xs"
-          backgroundColor={GLASS.background}
-          borderStyle="round"
-          borderColor={p >= ORANGE ? c.edge : GLASS.border}
-          hover={{ borderColor: p >= ORANGE ? c.text : GLASS.borderHover }}
-        >
-          {/* Percentage pill: lit dot and figure on a tinted ground, one thin drawing. */}
-          <Svg source={pill.source} alt={percent} width={pill.width} height={PILL_H} />
-
-          <Svg
-            source={gaugeSvg(p, t, g.tokens === null)}
-            alt={`Context ${percent} of the ${g.autoCompact ? 'auto-compaction limit' : 'window'}`}
-            width={GAUGE_PX}
-            height={GAUGE_H}
-          />
-
-          <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
-            <Svg source={TOKENS_ICON} alt="Tokens" width={14} height={14} />
-            <Text key="figures" color={GLASS.muted} size="caption" tabular>{figures}</Text>
-            <Text key="unit" color={GLASS.muted} size="caption">tokens</Text>
-          </Box>
-
-          <Box flexGrow={1} />
-
-          <Box flexDirection="row" alignItems="center" gap="sm" flexShrink={0}>
-            <Svg source={DIVIDER} alt="Separator" width={1} height={18} />
-            {/* Each button is a pill like the percentage: a thin border, a faint ground, an icon
-                and a chromeless Button (the desktop takes no drawing inside a Button). */}
-            <Box
-              key="compact-pill"
-              flexDirection="row"
-              alignItems="center"
-              gap="xs"
-              paddingX="sm"
-              paddingY={0}
-              flexShrink={0}
-              backgroundColor={PILL_BACKGROUND}
-              borderStyle="round"
-              borderColor={urgent || queued ? c.edge : PILL_BORDER}
-              hover={{ borderColor: urgent || queued ? c.text : GLASS.borderHover }}
-            >
-              <Svg source={COMPACT_ICON} alt="Compact icon" width={14} height={14} />
-              <Button
-                key="compact"
-                label={compactLabel}
-                plain
-                dimColor={running !== null && running !== 'compact'}
-                onPress={onCompact}
-              />
-            </Box>
-            <Box
-              key="handoff-pill"
-              flexDirection="row"
-              alignItems="center"
-              gap="xs"
-              paddingX="sm"
-              paddingY={0}
-              flexShrink={0}
-              backgroundColor={PILL_BACKGROUND}
-              borderStyle="round"
-              borderColor={PILL_BORDER}
-              hover={{ borderColor: GLASS.borderHover }}
-            >
-              <Svg source={HANDOFF_ICON} alt="Handoff icon" width={15} height={15} />
-              <Button
-                key="handoff"
-                label={handoffLabel}
-                plain
-                dimColor={running !== null && running !== 'handoff'}
-                onPress={onHandoff}
-              />
-            </Box>
-            <Box
-              key="hide-pill"
-              flexDirection="row"
-              alignItems="center"
-              paddingX="xs"
-              paddingY={0}
-              flexShrink={0}
-              backgroundColor={PILL_BACKGROUND}
-              borderStyle="round"
-              borderColor={PILL_BORDER}
-              hover={{ borderColor: GLASS.borderHover }}
-            >
-              <Button key="hide" label="×" plain dimColor onPress={hide} />
-            </Box>
-          </Box>
-        </Box>
-      )
-    }
-
-    return (
-      <Box
-        flexDirection="row"
-        alignItems="center"
-        gap="md"
-        paddingX={terminal ? 1 : 'sm'}
-        borderStyle={terminal ? 'round' : undefined}
-        borderColor={terminal ? (p >= ORANGE ? t : 'subtle') : undefined}
-      >
-        <Box minWidth={5}>
-          <Text key="percent" color={t} weight="semibold" bold tabular>
-            {g.tokens === null ? '–' : `${p}%`}
-          </Text>
-        </Box>
-
-        {/* On the desktop the "━" glyph is a little wider than a cell: what overflows is clipped
-            instead of wrapping to a second line. */}
-        <Box flexDirection="row" width={BAR_WIDTH} overflow="hidden">
-          <Text key="filled" color={t} mono wrap="clip">{b.filled}</Text>
-          <Text key="empty" color="subtle" mono wrap="clip">{b.empty}</Text>
-        </Box>
-
-        <Text key="figures" dimColor size="caption" tabular>{figures}</Text>
-
-        <Box flexGrow={1} />
-
-        <Box flexDirection="row" alignItems="center" gap="sm">
-          <Button
-            key="compact"
-            label={running === 'compact' ? 'Compacting…' : queued ? 'After this turn' : 'Compact'}
-            variant={urgent || queued ? 'primary' : 'secondary'}
-            dimColor={!queued && (quiet || (running !== null && running !== 'compact'))}
-            onPress={onCompact}
-          />
-          <Button
-            key="handoff"
-            label={running === 'handoff' ? 'Sent…' : 'Handoff note'}
-            variant="secondary"
-            dimColor={quiet || (running !== null && running !== 'handoff')}
-            onPress={onHandoff}
-          />
-          <Button key="hide" label="×" plain dimColor onPress={hide} />
-        </Box>
-      </Box>
-    )
-  })
+  // An older Claude Code may refuse part of the glass tree (an Svg, a hover, a CSS color):
+  // the hook is then skipped and its catch draws the plain band, so the gauge never vanishes.
+  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => drawBand($, e, next, true)).catch(($, e, next) =>
+    drawBand($, e, next, false),
+  )
 }

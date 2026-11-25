@@ -23,6 +23,8 @@ At the prompt of a Claude Code terminal session:
 ```
 
 Answer `y` to add the marketplace, then pick a scope (Enter keeps the user scope, so the band shows in every session).
+The plugin is named `context-claude`, not `claude-context` like the repository: Claude Code reserves plugin names
+that start with `claude-`.
 
 From a shell:
 

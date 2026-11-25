@@ -362,8 +362,11 @@ async function drawBand<R>(
 
     // A pill whose Button is the whole pill: the desktop draws an Svg as an image, which
     // takes no press, so the icon sits under the Button, in the room its label leaves at the
-    // left with en spaces (they are not collapsed like plain spaces). The icon's absolute Box
-    // comes first and the Button's Box after it, so the Button is painted over the icon.
+    // left with en spaces (they are not collapsed like plain spaces). An absolute Box is
+    // painted over the flow, so the Button's Box must be positioned too, after the icon's: the
+    // Button is then painted over the icon, and the pointer on the icon stays on it. The
+    // desktop positions a Box only when it holds an absolute Box (a `position: "relative"`
+    // prop draws nothing), hence the empty absolute Box beside the Button.
     const pillButton = (
       key: string,
       label: string,
@@ -389,7 +392,8 @@ async function drawBand<R>(
             <Svg source={icon} alt={`${key === 'compact' ? 'Compact' : 'Handoff'} icon`} width={iconPx} height={iconPx} />
           </Box>
         )}
-        <Box flexDirection="row" alignItems="stretch">
+        <Box key={`${key}-press`} flexDirection="row" alignItems="stretch">
+          <Box key={`${key}-anchor`} position="absolute" top={0} left={0} width={0} height={0} />
           <Button
             key={key}
             label={icon !== undefined ? `${ICON_ROOM}${label}${EDGE_ROOM}` : `${EDGE_ROOM}${label}${EDGE_ROOM}`}

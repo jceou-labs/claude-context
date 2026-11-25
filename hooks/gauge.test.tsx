@@ -93,6 +93,16 @@ test('on graphical surfaces the gauge is a gradient Svg whose fill follows the p
     }
     expect((await ui.find({ type: 'Box', key: 'compact-icon' }))?.props.position).toBe('absolute')
     expect((await ui.find({ type: 'Box', key: 'handoff-icon' }))?.props.position).toBe('absolute')
+    // Bug seen on the desktop: the icon's layer was painted over the Button, so the hover
+    // went off on the icon. The Button's Box comes after it and is positioned, which the
+    // desktop does only for a Box that holds an absolute Box.
+    for (const key of ['compact', 'handoff']) {
+      expect((await ui.find({ type: 'Box', key: `${key}-anchor` }))?.props.position).toBe('absolute')
+      const pill = await ui.find({ type: 'Box', key: `${key}-pill` })
+      const children = (pill?.children ?? []) as { props?: { key?: string } }[]
+      const order = children.map(c => c.props?.key)
+      expect(order).toEqual([`${key}-icon`, `${key}-press`])
+    }
     expect(String((await ui.find({ type: 'Button', key: 'compact' }))?.props.label)).toMatch(/^ {4}Compact $/)
     // Bug seen on the desktop: an Svg with an empty alt was not drawn at all.
     const svgs = await ui.findAll({ type: 'Svg' })

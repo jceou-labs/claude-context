@@ -40,6 +40,17 @@ claude plugin install context-claude --marketplace jceou-labs/claude-context
 
 In the desktop app, where `/plugin` doesn't run: click + next to the prompt box, then Plugins, Add marketplace with `jceou-labs/claude-context`, then Add plugin. A mod installed from a terminal at the user scope also shows in the desktop app.
 
+## Compacting earlier
+
+By default, models with a 1M-token window compact at about 967K tokens. To compact earlier, set `autoCompactWindow` in `~/.claude/settings.json` (100000 or more), for example `"autoCompactWindow": 400000`. The band then ends at that value.
+
+A lower window does two things:
+
+- **It saves tokens.** Claude Code sends the whole conversation with every request, so each message costs more as the context grows. Cached parts are cheaper but still count ([Claude Code docs](https://code.claude.com/docs/en/costs)).
+- **It may keep answers sharper.** Models recall less accurately as the context grows, gradually rather than past a fixed point ([Anthropic](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), [Chroma](https://www.trychroma.com/research/context-rot)). No source says where this starts for current 1M-token models.
+
+Anthropic doesn't recommend a value. 400K is a popular pick, not an official rule. A compaction keeps a summary and drops details, so when you switch to unrelated work, `/clear` or a Handoff note works better.
+
 ## Notes
 
 - Right after a compaction, Claude Code doesn't measure the context until the next reply. The band shows the size after compaction when Claude Code reports it, and a dash otherwise.
